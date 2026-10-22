@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">قارئ بطاقات النت</string>
+    <string name="admob_app_id" translatable="false">ca-app-pub-3407676171751539~6023440646</string>
+    <string name="admob_banner_id" translatable="false">ca-app-pub-3407676171751539/7778455578</string>
 </resources>
