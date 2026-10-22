@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.NetCard" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">@color/sky_dark</item>
+        <item name="colorPrimaryVariant">@color/ink</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="android:statusBarColor">@color/sky</item>
+        <item name="android:navigationBarColor">@color/sky</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
