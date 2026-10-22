@@ -88,11 +88,11 @@ object AppSettings {
 
     fun minUser(c: Context) = if (advanced(c)) p(c).getInt("minUser", 8) else 8
     fun maxPass(c: Context) = if (advanced(c)) p(c).getInt("maxPass", 8) else 8
-    fun flashDefault(c: Context) = advanced(c) && p(c).getBoolean("flash", false)
+    fun flashDefault(c: Context) = p(c).getBoolean("flash", true)
 
     fun savedMinUser(c: Context) = p(c).getInt("minUser", 8)
     fun savedMaxPass(c: Context) = p(c).getInt("maxPass", 8)
-    fun savedFlash(c: Context) = p(c).getBoolean("flash", false)
+    fun savedFlash(c: Context) = p(c).getBoolean("flash", true)
 
     fun save(c: Context, minUser: Int, maxPass: Int, flash: Boolean) {
         p(c).edit().putInt("minUser", minUser).putInt("maxPass", maxPass)

@@ -48,6 +48,7 @@ class PortalLogin(
     private var fillAttempts = 0
     private var submitTime = 0L
     private var token = 0
+    private var stage = 0
     private var logoutMode = false
 
     var isRunning = false
@@ -109,6 +110,7 @@ class PortalLogin(
         submitted = false
         filling = false
         fillAttempts = 0
+        stage = 0
         user = u
         pass = p
         val t = ++token
@@ -147,7 +149,7 @@ class PortalLogin(
         if (filling) return
         filling = true
         val t = token
-        web.evaluateJavascript(buildJs()) { res ->
+        web.evaluateJavascript(buildJs(0)) { res ->
             filling = false
             if (t != token || !isRunning) return@evaluateJavascript
             if ((res ?: "").contains("submitted")) {
@@ -174,12 +176,25 @@ class PortalLogin(
                 val online = w != null && probe(w).online
                 handler.post {
                     if (t != token || !isRunning) return@post
-                    when {
-                        online -> finishOk()
-                        SystemClock.elapsedRealtime() - submitTime > 25000 ->
-                            finishFail("لم ينجح الدخول. تأكد أن البطاقة صالحة", true)
-                        else -> poll(t)
+                    if (online) {
+                        finishOk()
+                        return@post
                     }
+                    val el = SystemClock.elapsedRealtime() - submitTime
+                    if (el > 30000) {
+                        finishFail("لم ينجح الدخول. تأكد أن البطاقة صالحة", true)
+                        return@post
+                    }
+                    // إذا لم يتم الدخول نعيد المحاولة بطرق أقوى
+                    if (stage == 0 && el > 5000) {
+                        stage = 1
+                        ui.onStatus("إعادة محاولة الدخول...")
+                        web.evaluateJavascript(buildJs(1), null)
+                    } else if (stage == 1 && el > 10000) {
+                        stage = 2
+                        web.evaluateJavascript(buildJs(2), null)
+                    }
+                    poll(t)
                 }
             }
         }, 1500)
@@ -251,29 +266,40 @@ class PortalLogin(
         )
     }
 
-    // ---------- سكربت تعبئة الخانات والضغط على دخول ----------
-    private fun buildJs(): String {
+    // ---------- سكربت تعبئة الخانات والضغط على زر الدخول ----------
+    // stage 0: يضغط أفضل زر دخول | 1: Enter + إرسال النموذج | 2: إرسال مباشر
+    private fun buildJs(stage: Int): String {
         val u = JSONObject.quote(user)
         val p = JSONObject.quote(pass)
         return """
-(function(u,p){
+(function(u,p,stage){
  try{
+  function vis(e){
+    if(!e){return false;}
+    var r=e.getBoundingClientRect();
+    var s=window.getComputedStyle(e);
+    return r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none';
+  }
+  function txt(e){
+    return ((e.innerText||e.value||e.getAttribute('aria-label')||e.title||'')+'').toLowerCase().trim();
+  }
   var all=[].slice.call(document.querySelectorAll('input'));
   var ok=['text','tel','number','email','password','search',''];
   var f=all.filter(function(i){
     var t=(i.getAttribute('type')||'text').toLowerCase();
     return ok.indexOf(t)>=0 && !i.disabled && !i.readOnly;
   });
-  var vis=f.filter(function(i){return i.offsetWidth>0||i.offsetHeight>0;});
-  if(vis.length){f=vis;}
+  var v=f.filter(vis);
+  if(v.length){f=v;}
   if(!f.length){return 'nofields';}
-  function setv(el,v){
+  function setv(el,val){
     try{
       var d=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');
-      d.set.call(el,v);
-    }catch(e){el.value=v;}
+      d.set.call(el,val);
+    }catch(e){el.value=val;}
     el.dispatchEvent(new Event('input',{bubbles:true}));
     el.dispatchEvent(new Event('change',{bubbles:true}));
+    el.dispatchEvent(new Event('blur',{bubbles:true}));
   }
   var pw=null;
   for(var i=0;i<f.length;i++){
@@ -289,23 +315,57 @@ class PortalLogin(
   }
   if(us){setv(us,u);}
   if(pw){setv(pw,p);}
-  var form=(pw||us).form;
-  var scope=form||document;
-  var cands=scope.querySelectorAll('input[type=submit],button[type=submit],button,input[type=button],a.btn,a.button');
-  var btn=null;
-  for(var j=0;j<cands.length;j++){
-    if(cands[j].offsetWidth>0||cands[j].offsetHeight>0){btn=cands[j];break;}
+  var tgt=pw||us;
+  var form=tgt.form;
+  var good=['دخول','تسجيل','ادخل','اتصال','اتصل','تفعيل','متابعة','تأكيد','login','log in','sign in','signin','connect','submit','ok','continue','enter','verify','activate','start'];
+  var bad=['cancel','reset','register','sign up','signup','الغاء','إلغاء','مسح','اشتراك','help','مساعدة','show','اظهار','إظهار','language','لغة','شراء','buy'];
+  function score(e){
+    var s=0;
+    var t=(e.getAttribute('type')||'').toLowerCase();
+    var tag=e.tagName.toLowerCase();
+    if(t==='submit'){s+=50;}
+    else if(tag==='button'||t==='button'||t==='image'){s+=10;}
+    var x=txt(e);
+    for(var a=0;a<good.length;a++){if(x.indexOf(good[a])>=0){s+=30;break;}}
+    for(var b=0;b<bad.length;b++){if(x.indexOf(bad[b])>=0){s-=100;break;}}
+    if(form&&e.form===form){s+=10;}
+    return s;
   }
-  if(!btn&&cands.length){btn=cands[0];}
-  if(!btn&&!form){return 'nosubmit';}
+  var pool=[].slice.call(document.querySelectorAll('input[type=submit],input[type=button],input[type=image],button,a,[role=button],[onclick]')).filter(vis);
+  var btn=null,best=0;
+  for(var j=0;j<pool.length;j++){
+    var sc=score(pool[j]);
+    if(sc>best){best=sc;btn=pool[j];}
+  }
+  if(!btn){
+    var fb=[].slice.call(document.querySelectorAll('input[type=submit],button')).filter(vis);
+    if(fb.length){btn=fb[0];}
+  }
+  function enter(el){
+    try{el.focus();}catch(e){}
+    ['keydown','keypress','keyup'].forEach(function(n){
+      el.dispatchEvent(new KeyboardEvent(n,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));
+    });
+  }
   setTimeout(function(){
-    if(btn){btn.click();}
-    else if(form.requestSubmit){form.requestSubmit();}
-    else{form.submit();}
-  },300);
+    try{
+      if(stage===0){
+        if(btn){btn.click();}
+        else if(form){ if(form.requestSubmit){form.requestSubmit();}else{form.submit();} }
+        else{enter(tgt);}
+      }else if(stage===1){
+        enter(tgt);
+        if(form&&form.requestSubmit){try{form.requestSubmit();}catch(e){}}
+        if(btn){btn.click();}
+      }else{
+        if(btn){btn.click();}
+        if(form){try{form.submit();}catch(e){}}
+      }
+    }catch(e){}
+  },400);
   return 'submitted';
  }catch(e){return 'error:'+e;}
-})($u,$p);
+})($u,$p,$stage);
 """.trimIndent()
     }
 }

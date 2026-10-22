@@ -195,7 +195,9 @@ class MainActivity : AppCompatActivity(), PortalLogin.Callback {
                 camera = provider.bindToLifecycle(
                     this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis
                 )
+                if (camera?.cameraInfo?.hasFlashUnit() != true) torchOn = false
                 camera?.cameraControl?.enableTorch(torchOn)
+                updateFlashLabel()
             } catch (e: Exception) {
                 setStatus("تعذّر تشغيل الكاميرا")
             }
@@ -383,7 +385,9 @@ class MainActivity : AppCompatActivity(), PortalLogin.Callback {
         currentCard?.let { CardStore.recordUse(this, it.user, "نجح") }
         setStatus("تم الدخول بنجاح ✓")
         showSuccess()
-        resumeScan(4000)
+        scanning = false
+        // إغلاق التطبيق بعد نجاح الدخول (بعد إظهار الرسالة لحظات)
+        handler.postDelayed({ finishAndRemoveTask() }, 2500)
     }
 
     override fun onAlreadyOnline() {
@@ -483,7 +487,7 @@ class MainActivity : AppCompatActivity(), PortalLogin.Callback {
             setText(AppSettings.savedMaxPass(this@MainActivity).toString())
         }
         val flash = CheckBox(this).apply {
-            text = "تشغيل الفلاش افتراضياً عند فتح التطبيق"
+            text = "تشغيل الفلاش عند فتح التطبيق"
             isChecked = AppSettings.savedFlash(this@MainActivity)
         }
         box.addView(minU)
